@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Diário de Obra</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Compilador React/Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Estilos de Proteção e Design -->
+    <style>
+      :root { color-scheme: light; }
+      body, html { background-color: #f9fafb !important; color: #111827 !important; font-family: sans-serif; }
+      button, input, select, textarea, .rounded-xl, .rounded-lg, .rounded-2xl { border-radius: 12px !important; }
+      input, select, textarea { background-color: #ffffff !important; color: #000000 !important; border: 1px solid #e5e7eb !important; }
+      .rounded-full { border-radius: 9999px !important; }
+      
+      @media print {
+        @page { size: A4; margin: 15mm; }
+        .print\:break-after-page { page-break-after: always; }
+      }
+      
+      .pin-drop { animation: drop 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+      @keyframes drop { 0% { transform: translate(-50%, -200%); opacity: 0; } 100% { transform: translate(-50%, -100%); opacity: 1; } }
+      
+      .hide-scroll::-webkit-scrollbar { display: none; }
+      .hide-scroll { 
+         -ms-overflow-style: none; scrollbar-width: none; overscroll-behavior: none; 
+         -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+      }
+    </style>
+
+    <!-- Mapeamento de Bibliotecas React e Ícones -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from "react";
+        import { createRoot } from "react-dom/client";
+        
+        // Importações Seguras do Firebase Cloud
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+        
+        // Importações de Ícones
+        import { Sun, Cloud, CloudRain, Hammer, ClipboardList, Calendar, Trash2, Plus, ChevronLeft, Printer, CheckCircle2, MapPin, User, Briefcase, X, BarChart3, Lock, LogOut, Camera, Loader2, Download, Pencil, Upload, Map as MapIcon, Check } from "lucide-react";
+
+        // --- SUAS CHAVES DO FIREBASE ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyDr7eviIEUdKQRAG2ahqtdDTfGOXFEG7UM",
+          authDomain: "diarioobra-60aca.firebaseapp.com",
+          projectId: "diarioobra-60aca",
+          storageBucket: "diarioobra-60aca.firebasestorage.app",
+          messagingSenderId: "948386755668",
+          appId: "1:948386755668:web:a180d988fae131249d69c1",
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        const DOMINIO_PADRAO = "@obra.com";
+        const DB_COLLECTION = "diarios_final";
+        const LOGO_URL = "https://firebasestorage.googleapis.com/v0/b/diarioobra-60aca.firebasestorage.app/o/logo.jpeg?alt=media&token=2741be05-82bc-46cb-8e17-e5c88811ad8c";
+
+        const MAPA_PLANTA_URL = "https://firebasestorage.googleapis.com/v0/b/diarioobra-60aca.firebasestorage.app/o/Sem%20t%C3%ADtulo.png?alt=media&token=c7d40aba-cae3-4c57-b9fb-ddbf9ce629ea";
+
+        const COORDENADAS_MAPA = {
+          "ADM": [50.5, 30.2],
+          "ATERRO": [25.0, 75.0],
+          "CENTRO OESTE": [60.0, 45.0],
+          "NORTE-01": [15.5, 20.0],
+          "NORTE-02": [80.0, 80.0],
+          "PORTARIA": [90.0, 10.0],
+          "CAIXARIAS": [40.0, 60.0],
+        };
+
+        const LOCAIS_PRODUCAO = [
+          "DESCIDA D'AGUA", "CAIXARIAS", "CANALETA", "GALERIAS", "EDIFICAÇÕES", "ATERRO",
+        ];
+
+        const LOCAIS_SETOR = [
+          "ADM", "ATERRO", "CENTRO OESTE", "AUSENTE", "MANUTENÇÃO PORTARIA", "PORTARIA", 
+          "PROXIMA HIDROS", "ROO-02", "RQQ 01", "RQQ 02", "SUSTENTARE",
+          "Norte 5 N-5", "Norte 4 N-4", "Norte 3 N-3", "Norte 2 N-2", "Norte 1 N-1",
+          "Leste 1 E-1", "Leste 2 E-2", "Leste 3 E-3", "Leste 4 E-4",
+          "Sul 1 S-1", "Sul 2 S-2", "Sul 3 S-3",
+          "Sudeste 1 SE-1", "Sudeste 2 SE-2",
+          "Sudoeste 1 SW-1", "Sudoeste 2 SW-2", "Sudoeste 3 SW-3",
+          "Oeste 1 W-1", "Noroeste 1 NW-1"
+        ].sort();
+
+        const ITENS = [
+          "GEOCÉLULA/M²", "LONA (PRETA)/M²", "RACHÃO/M³", "TUBO/UNI", "FERRO/UNI 3/8''",
+          "AREIA/M³", "BRITA 1/M³", "RAFIA/UNI", "LIMPEZA M³", "LIMPEZA LINEAR",
+          "BLOCO/UNI", "FERRO/UNI", "TELA/M²", "CIMENTO/UNI", "BGS", "CONSTRUÇÃO",
+          "GEOMB / M²", "GEOTÊXTIL/M²", "FERRAG. / DIV", "PRODUTIVIDADE LINEAR",
+          "PRODUTIDADE M²", "GRAMA LINEAR", "GRAMA M²", "SERVIÇOS DIVERSOS/OUTROS",
+          "LONA DE SACRIFÍCIO/M²", "ROÇAGEM ML", "ROÇAGEM M²",
+          "Tubo de 600mm PB", "Tubo de 800mm PB", "Tubo de 1200mm PB"
+        ].sort();
+
+        const FUNCIONARIOS = [
+          "ALEXANDRE DO NASCIMENTO PEREIRA", "ALEXANDRE SOUZA SIQUEIRA",
+          "ANTONIO ALCEMIR ALVES DE CASTRO", "DAMIÃO HELIO FELIX DOMINGOS",
+          "DAVI JUNIO FERREIRA DE SOUSA", "DENIVALDO ALVES DE OLIVEIRA",
+          "JAKSON JUNIOR LOPES DA SILVA", "JANDIEL DOS SANTOS SILVA",
+          "JOCEONE TELES DOS SANTOS", "JOSE MAGNALDO DA PAZ FILHO",
+          "MANOEL APOLINARIO MOURA DA SILVA", "MARCIO ROBERTO DOS SANTOS", 
+          "PAULO CANDIDO DE SOUSA", "ROGERIO SANTOS SALES", "SAMUEL DA SILVA FERREIRA", 
+          "SEBASTIAO MESSIAS DE SOUSA", "WANDERSON DA SILVA CHAGAS",
+        ].sort();
+
+        const SERVICOS = [
+          "AUXILIANDO OFICINA", "CANALETA", "COLOCANDO COMPOSTO", "CONSTRUINDO CANALETA",
+          "COZINHA", "DENCIDADE INSITO", "DESCIDA D'ÁGUA", "DESCIDA HIDRAULICA",
+          "ENCABEÇANDO DESCIDA", "FRENTE OPERAÇÃO", "GRAVIMETRIA", "GRAMA LINEAR", "GRAMA M²",
+          "IMPLANTANDO QUEIMADOR", "LIMPEZA D/BERMAS", "LIMPEZA D/CAIXA", "LIMPEZA EMISSÁRIO", 
+          "LIMPEZA PREDIAL", "MANUTENÇÃO", "MANUTENÇÃO CANALETA", "MANUTENÇÃO E LIMPEZA",
+          "MANUTENÇÃO PORTARIA", "MONTANDO QUEIMADOR", "PLANTIO DE GRAMA", "PORTARIA",
+          "PREPARANDO SOLO P/GRAMA", "REFORMA CAIXARIA", "RESPONDENDO OFICIO",
+          "ROÇAGEM", "SERVIÇOS GERAIS", "TIRANDO AFLORAMENTO", "TREINAMENTO",
+          "SERVIÇOS DIVERSOS/OUTROS", "COLOCANDO LONA SACRIFÍCIO", "FALTA", "ATESTADO", "FOLGA",
+        ].sort();
+
+        const App = () => {
+          const [user, setUser] = useState(null);
+          const [view, setView] = useState("home");
+          const [logs, setLogs] = useState([]);
+          const [loading, setLoading] = useState(false);
+          const [successMsg, setSuccessMsg] = useState("");
+          
+          // Estados de Alerta Customizado
+          const [alertMsg, setAlertMsg] = useState("");
+          const [confirmDialog, setConfirmDialog] = useState(null);
+
+          const [filterStartDate, setFilterStartDate] = useState(""); 
+          const [filterEndDate, setFilterEndDate] = useState(""); 
+
+          const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
+          const [mapMonth, setMapMonth] = useState(new Date().toISOString().slice(0, 7));
+          
+          const [isUploading, setIsUploading] = useState(false);
+          const [uploadErrorDetails, setUploadErrorDetails] = useState(""); 
+          const [restored, setRestored] = useState(false);
+          const [editingId, setEditingId] = useState(null);
+          const [selectedImage, setSelectedImage] = useState(null);
+
+          const [mapNode, setMapNode] = useState(null);
+          const [modalMapNode, setModalMapNode] = useState(null);
+          const mapContainerRef = useRef(null);
+          const modalInnerMapRef = useRef(null); 
+          
+          const [localClusters, setLocalClusters] = useState([]);
+          const [draggingState, setDraggingState] = useState(null);
+          const [mapPinInfo, setMapPinInfo] = useState(null);
+          const [mapZoom, setMapZoom] = useState(100); 
+
+          const [pendingPinMove, setPendingPinMove] = useState(null);
+          const [initialPinPos, setInitialPinPos] = useState(null);
+          const pinDragState = useRef({ moved: false });
+          const modalLongPressTimer = useRef(null);
+
+          const activePointers = useRef(new Set());
+          const panState = useRef({ active: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0, moved: false, target: null });
+          const [isPanningMap, setIsPanningMap] = useState(false);
+
+          const [username, setUsername] = useState("");
+          const [password, setPassword] = useState("");
+          const [loginError, setLoginError] = useState("");
+
+          const [formData, setFormData] = useState({
+            date: new Date().toISOString().split("T")[0],
+            startTime: "07:00",
+            endTime: "17:00",
+            responsible: "",
+            weather: "sun",
+            crews: [],
+            entries: [],
+            photos: [], 
+            photoUrl: "", 
+            notes: "",
+          });
+
+          const [tempLocation, setTempLocation] = useState("");
+          const [tempItem, setTempItem] = useState("");
+          const [tempQty, setTempQty] = useState("");
+          const [tempEntryCoords, setTempEntryCoords] = useState(null); 
+
+          const [tempService, setTempService] = useState("");
+          const [tempCrewLocation, setTempCrewLocation] = useState("");
+          const [selectedWorkers, setSelectedWorkers] = useState([]);
+
+          const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+          const [mapModalTarget, setMapModalTarget] = useState(null); 
+          const [modalTempCoords, setModalTempCoords] = useState(null);
+
+          const formatDateDisplay = (dateString) => {
+            if (!dateString) return "Data Indefinida";
+            const [year, month, day] = dateString.split('-');
+            return `${day}/${month}/${year}`;
+          };
+
+          useEffect(() => {
+            if (view === "form") {
+              const dataToSave = JSON.stringify({ ...formData, editingId });
+              localStorage.setItem("diario_draft_v3", dataToSave);
+            }
+          }, [formData, editingId, view]);
+
+          useEffect(() => {
+            const savedData = localStorage.getItem("diario_draft_v3");
+            if (savedData) {
+              try {
+                const parsedData = JSON.parse(savedData);
+                if (parsedData.date === new Date().toISOString().split("T")[0]) {
+                    const { editingId: savedId, ...savedForm } = parsedData;
+                    setFormData(savedForm);
+                    if (savedId) setEditingId(savedId);
+                    setRestored(true);
+                    if (savedForm.crews?.length > 0 || savedForm.entries?.length > 0 || savedForm.notes || (savedForm.photos && savedForm.photos.length > 0)) {
+                       setView("form");
+                    }
+                }
+              } catch (e) {
+                console.error("Erro ao recuperar rascunho", e);
+              }
+            }
+          }, []);
+
+          useEffect(() => {
+            const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+              setUser(currentUser);
+              if (currentUser) {
+                const nameFromEmail = currentUser.email ? currentUser.email.split("@")[0] : "Admin";
+                const formattedName = nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1);
+                if (!formData.responsible) {
+                   setFormData((prev) => ({ ...prev, responsible: formattedName }));
+                }
+              }
+            });
+            return () => unsubscribe();
+          }, []);
+
+          useEffect(() => {
+            if (!user) return;
+            const q = collection(db, DB_COLLECTION);
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const logsData = snapshot.docs.map((doc) => ({
+                  id: doc.id,
+                  ...doc.data(),
+                }));
+                logsData.sort((a, b) => {
+                  if (a.date > b.date) return -1;
+                  if (a.date < b.date) return 1;
+                  return 0;
+                });
+                setLogs(logsData);
+              },
+              (error) => console.error("Erro Firebase:", error)
+            );
+            return () => unsubscribe();
+          }, [user]);
+
+          useEffect(() => {
+            if (isMapModalOpen || view === "map") {
+              setMapZoom(100);
+            }
+          }, [isMapModalOpen, view]);
+
+          useEffect(() => {
+            const attachZoom = (node) => {
+               if (!node) return null;
+               
+               let initialDist = 0;
+               let initialZoom = 0;
+               
+               const handleWheel = (e) => {
+                  e.preventDefault(); 
+                  setMapZoom(prevZoom => {
+                     const delta = e.deltaY > 0 ? -40 : 40; 
+                     const newZoom = Math.max(100, Math.min(2000, prevZoom + delta));
+                     
+                     if (newZoom !== prevZoom) {
+                        const ratio = newZoom / prevZoom;
+                        const rect = node.getBoundingClientRect();
+                        
+                        const mouseX = e.clientX - rect.left + node.scrollLeft;
+                        const mouseY = e.clientY - rect.top + node.scrollTop;
+                        
+                        requestAnimationFrame(() => {
+                           node.scrollLeft = mouseX * ratio - (e.clientX - rect.left);
+                           node.scrollTop = mouseY * ratio - (e.clientY - rect.top);
+                        });
+                     }
+                     return newZoom;
+                  });
+               };
+
+               const handleTouchStart = (e) => {
+                  if (e.touches.length === 2) {
+                     e.preventDefault();
+                     initialDist = Math.hypot(
+                         e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY
+                     );
+                     setMapZoom(prev => { initialZoom = prev; return prev; });
+                  }
+               };
+
+               const handleTouchMove = (e) => {
+                  if (e.touches.length === 2 && initialDist > 0) {
+                     e.preventDefault();
+                     const dist = Math.hypot(
+                         e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY
+                     );
+                     
+                     setMapZoom(prevZoom => {
+                        const newZoom = Math.max(100, Math.min(2000, initialZoom * (dist / initialDist)));
+                        if (newZoom !== prevZoom) {
+                           const ratio = newZoom / prevZoom;
+                           const rect = node.getBoundingClientRect();
+                           const pinchX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                           const pinchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                           
+                           const pointX = pinchX - rect.left + node.scrollLeft;
+                           const pointY = pinchY - rect.top + node.scrollTop;
+                           
+                           requestAnimationFrame(() => {
+                              node.scrollLeft = pointX * ratio - (pinchX - rect.left);
+                              node.scrollTop = pointY * ratio - (pinchY - rect.top);
+                           });
+                        }
+                        return newZoom;
+                     });
+                  }
+               };
+
+               node.addEventListener("wheel", handleWheel, { passive: false });
+               node.addEventListener("touchstart", handleTouchStart, { passive: false });
+               node.addEventListener("touchmove", handleTouchMove, { passive: false });
+               
+               return () => {
+                  node.removeEventListener("wheel", handleWheel);
+                  node.removeEventListener("touchstart", handleTouchStart);
+                  node.removeEventListener("touchmove", handleTouchMove);
+               };
+            };
+
+            const cleanupMap = attachZoom(mapNode);
+            const cleanupModal = attachZoom(modalMapNode);
+
+            return () => {
+               if (cleanupMap) cleanupMap();
+               if (cleanupModal) cleanupModal();
+            };
+          }, [mapNode, modalMapNode]);
+
+          useEffect(() => {
+            if (view !== "map") return;
+            const logsDoMes = mapMonth ? logs.filter((log) => log.date.startsWith(mapMonth)) : logs;
+            
+            let todosOsPontos = [];
+            logsDoMes.forEach(log => {
+              if(log.entries) {
+                log.entries.forEach((entry, idx) => {
+                  const coords = entry.mapCoords || COORDENADAS_MAPA[entry.location];
+                  if (coords) {
+                    todosOsPontos.push({
+                      logId: log.id,
+                      type: 'producao',
+                      itemIndex: idx,
+                      location: entry.location,
+                      title: entry.item,
+                      qty: parseFloat(entry.qty) || 0,
+                      date: log.date,
+                      top: coords[0],
+                      left: coords[1]
+                    });
+                  }
+                });
+              }
+            });
+
+            const threshold = 3; 
+            const novosClusters = [];
+            
+            todosOsPontos.forEach(ponto => {
+              let adicionado = false;
+              for (let cluster of novosClusters) {
+                const dist = Math.hypot(cluster.top - ponto.top, cluster.left - ponto.left);
+                if (dist < threshold) {
+                  cluster.items.push(ponto);
+                  adicionado = true;
+                  break;
+                }
+              }
+              if (!adicionado) {
+                novosClusters.push({
+                  id: `cluster-${Math.random().toString(36).substr(2, 9)}`,
+                  top: ponto.top,
+                  left: ponto.left,
+                  items: [ponto]
+                });
+              }
+            });
+
+            setLocalClusters(novosClusters);
+          }, [logs, mapMonth, view]);
+
+          const handleMapPointerDown = (e) => {
+            activePointers.current.add(e.pointerId);
+
+            if (!draggingState && e.target.tagName !== 'BUTTON' && !e.target.closest('.pin-drop')) {
+               if (activePointers.current.size > 1) {
+                   panState.current.active = false;
+                   return;
+               }
+
+               panState.current = {
+                  active: true,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  scrollLeft: e.currentTarget.scrollLeft,
+                  scrollTop: e.currentTarget.scrollTop,
+                  moved: false
+               };
+               e.currentTarget.setPointerCapture(e.pointerId);
+               setIsPanningMap(true);
+            }
+          };
+
+          const handleMapPointerMove = (e) => {
+            if (activePointers.current.size > 1) {
+               panState.current.active = false;
+               return;
+            }
+
+            if (panState.current.active) {
+               const dx = e.clientX - panState.current.startX;
+               const dy = e.clientY - panState.current.startY;
+               
+               if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                  panState.current.moved = true;
+               }
+               
+               e.currentTarget.scrollLeft = panState.current.scrollLeft - dx;
+               e.currentTarget.scrollTop = panState.current.scrollTop - dy;
+            }
+            
+            if (draggingState && mapContainerRef.current) {
+               const dx = e.clientX - draggingState.startX;
+               const dy = e.clientY - draggingState.startY;
+
+               if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                  pinDragState.current.moved = true;
+               }
+
+               const rect = mapContainerRef.current.getBoundingClientRect();
+               let xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+               let yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+               xPercent = Math.max(0, Math.min(100, xPercent));
+               yPercent = Math.max(0, Math.min(100, yPercent));
+
+               setLocalClusters(prev => prev.map(c => 
+                  c.id === draggingState.id ? { ...c, top: yPercent, left: xPercent } : c
+               ));
+            }
+          };
+
+          const handleMapPointerUp = async (e) => {
+            activePointers.current.delete(e.pointerId);
+
+            if (panState.current.active) {
+               panState.current.active = false;
+               e.currentTarget.releasePointerCapture(e.pointerId);
+               setIsPanningMap(false);
+            }
+
+            if (draggingState) {
+               const clusterMovido = localClusters.find(c => c.id === draggingState.id);
+               setDraggingState(null);
+               
+               if (clusterMovido) {
+                  if (pinDragState.current.moved && initialPinPos && 
+                     (Math.abs(clusterMovido.top - initialPinPos.top) > 0.5 || Math.abs(clusterMovido.left - initialPinPos.left) > 0.5)) {
+                      
+                      setPendingPinMove(clusterMovido); 
+                      
+                  } else {
+                      if (initialPinPos) {
+                         setLocalClusters(prev => prev.map(c => c.id === clusterMovido.id ? { ...c, top: initialPinPos.top, left: initialPinPos.left } : c));
+                      }
+                  }
+               }
+            }
+          };
+
+          const handleMapPointerCancel = (e) => {
+            activePointers.current.delete(e.pointerId);
+            handleMapPointerUp(e);
+          };
+
+          const confirmPinMove = async () => {
+            if (!pendingPinMove) return;
+            try {
+              const updates = {};
+              pendingPinMove.items.forEach(item => {
+                 if (!updates[item.logId]) {
+                     updates[item.logId] = JSON.parse(JSON.stringify(logs.find(l => l.id === item.logId)));
+                 }
+                 const docData = updates[item.logId];
+                 if (item.type === 'producao') {
+                     docData.entries[item.itemIndex].mapCoords = [pendingPinMove.top, pendingPinMove.left];
+                 } else {
+                     docData.crews[item.itemIndex].mapCoords = [pendingPinMove.top, pendingPinMove.left];
+                 }
+              });
+
+              for (const logId in updates) {
+                  await updateDoc(doc(db, DB_COLLECTION, logId), updates[logId]);
+              }
+            } catch(err) {
+              console.error("Erro ao atualizar posição", err);
+              setAlertMsg("Erro ao salvar a nova posição.");
+            }
+            setPendingPinMove(null);
+            setInitialPinPos(null);
+          };
+
+          const cancelPinMove = () => {
+            if (pendingPinMove && initialPinPos) {
+                setLocalClusters(prev => prev.map(c => 
+                   c.id === pendingPinMove.id ? { ...c, top: initialPinPos.top, left: initialPinPos.left } : c
+                ));
+            }
+            setPendingPinMove(null);
+            setInitialPinPos(null);
+          };
+
+          const openMapModal = (target) => {
+            setMapModalTarget(target);
+            setModalTempCoords(tempEntryCoords);
+            setIsMapModalOpen(true);
+          };
+
+          const handleModalPointerDown = (e) => {
+            activePointers.current.add(e.pointerId);
+            
+            if (e.target.tagName !== 'BUTTON') {
+               if (activePointers.current.size > 1) {
+                  panState.current.active = false;
+                  if (modalLongPressTimer.current) clearTimeout(modalLongPressTimer.current);
+                  return;
+               }
+
+               panState.current = {
+                  active: true,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  scrollLeft: e.currentTarget.scrollLeft,
+                  scrollTop: e.currentTarget.scrollTop,
+                  moved: false,
+                  target: e.target
+               };
+               e.currentTarget.setPointerCapture(e.pointerId);
+               setIsPanningMap(true);
+
+               const clientX = e.clientX;
+               const clientY = e.clientY;
+
+               modalLongPressTimer.current = setTimeout(() => {
+                  if (!panState.current.moved && activePointers.current.size === 1) {
+                     if (modalInnerMapRef.current) {
+                         const rect = modalInnerMapRef.current.getBoundingClientRect();
+                         let xPercent = ((clientX - rect.left) / rect.width) * 100;
+                         let yPercent = ((clientY - rect.top) / rect.height) * 100;
+                         xPercent = Math.max(0, Math.min(100, xPercent));
+                         yPercent = Math.max(0, Math.min(100, yPercent));
+                         setModalTempCoords([yPercent, xPercent]);
+                         if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+                     }
+                  }
+               }, 500); 
+            }
+          };
+
+          const handleModalPointerMove = (e) => {
+            if (activePointers.current.size > 1) {
+               panState.current.active = false;
+               if (modalLongPressTimer.current) clearTimeout(modalLongPressTimer.current);
+               return;
+            }
+
+            if (panState.current.active) {
+               const dx = e.clientX - panState.current.startX;
+               const dy = e.clientY - panState.current.startY;
+
+               if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                  panState.current.moved = true;
+                  if (modalLongPressTimer.current) {
+                     clearTimeout(modalLongPressTimer.current);
+                     modalLongPressTimer.current = null;
+                  }
+               }
+
+               e.currentTarget.scrollLeft = panState.current.scrollLeft - dx;
+               e.currentTarget.scrollTop = panState.current.scrollTop - dy;
+            }
+          };
+
+          const handleModalPointerUp = (e) => {
+            activePointers.current.delete(e.pointerId);
+
+            if (modalLongPressTimer.current) {
+               clearTimeout(modalLongPressTimer.current);
+               modalLongPressTimer.current = null;
+            }
+
+            if (panState.current.active) {
+               const wasMoved = panState.current.moved;
+               panState.current.active = false;
+               e.currentTarget.releasePointerCapture(e.pointerId);
+               setIsPanningMap(false);
+               
+               if (!wasMoved && modalInnerMapRef.current) {
+                  const rect = modalInnerMapRef.current.getBoundingClientRect();
+                  let xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+                  let yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+                  xPercent = Math.max(0, Math.min(100, xPercent));
+                  yPercent = Math.max(0, Math.min(100, yPercent));
+                  setModalTempCoords([yPercent, xPercent]);
+               }
+            }
+          };
+
+          const handleModalPointerCancel = (e) => {
+            activePointers.current.delete(e.pointerId);
+            handleModalPointerUp(e);
+          };
+
+          const confirmMapSelection = () => {
+            if (mapModalTarget === 'entry') setTempEntryCoords(modalTempCoords);
+            setIsMapModalOpen(false);
+          };
+
+          const startNewLog = () => {
+            localStorage.removeItem("diario_draft_v3");
+            setEditingId(null);
+            setUploadErrorDetails("");
+            const nameFromEmail = user?.email ? user.email.split("@")[0] : "Admin";
+            const formattedName = nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1);
+
+            setFormData({
+                date: new Date().toISOString().split("T")[0],
+                startTime: "07:00",
+                endTime: "17:00",
+                responsible: formattedName,
+                weather: "sun",
+                crews: [],
+                entries: [],
+                photos: [], 
+                photoUrl: "", 
+                notes: "",
+            });
+            setTempEntryCoords(null);
+            setView("form");
+          };
+
+          const handleEditLog = (log) => {
+            setUploadErrorDetails("");
+            setFormData({
+              date: log.date,
+              startTime: log.startTime || "07:00",
+              endTime: log.endTime || "17:00",
+              responsible: log.responsible,
+              weather: log.weather,
+              crews: log.crews || [],
+              entries: log.entries || [],
+              photos: log.photos || (log.photoUrl ? [log.photoUrl] : []),
+              photoUrl: "", 
+              notes: log.notes || "",
+            });
+            setEditingId(log.id);
+            setView("form");
+          };
+
+          const handleLogin = async (e) => {
+            e.preventDefault();
+            setLoginError("");
+            const fakeEmail = `${username.toLowerCase().trim()}${DOMINIO_PADRAO}`;
+            try {
+              await signInWithEmailAndPassword(auth, fakeEmail, password);
+            } catch (error) {
+              setLoginError("Usuário ou senha incorretos.");
+            }
+          };
+
+          const handleLogout = async () => {
+            await signOut(auth);
+            setView("home");
+            setUsername("");
+            setPassword("");
+          };
+
+          const compressImage = (file) => {
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.readAsDataURL(file);
+              reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                  const canvas = document.createElement("canvas");
+                  const MAX_WIDTH = 800;
+                  let scaleSize = 1;
+                  if (img.width > MAX_WIDTH) {
+                    scaleSize = MAX_WIDTH / img.width;
+                  }
+                  canvas.width = img.width * scaleSize;
+                  canvas.height = img.height * scaleSize;
+                  const ctx = canvas.getContext("2d");
+                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                  
+                  canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error("Falha ao gerar arquivo da imagem"));
+                  }, "image/jpeg", 0.6);
+                };
+                img.onerror = () => reject(new Error("Falha ao carregar a imagem original"));
+              };
+              reader.onerror = () => reject(new Error("Falha ao ler o arquivo do dispositivo"));
+            });
+          };
+
+          const handlePhotoSelect = async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            setIsUploading(true);
+            setUploadErrorDetails("");
+
+            try {
+              const folder = new Date().toISOString().slice(0, 7); 
+              const newUploadedUrls = [];
+
+              for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const blob = await compressImage(file);
+                
+                const storageRef = ref(storage, `diarios_fotos/${folder}/${Date.now()}_${i}.jpg`);
+                await uploadBytes(storageRef, blob);
+                const url = await getDownloadURL(storageRef);
+                newUploadedUrls.push(url);
+              }
+
+              setFormData((prev) => ({ ...prev, photos: [...(prev.photos || []), ...newUploadedUrls] }));
+            } catch (error) {
+              setAlertMsg(error.message || "Erro desconhecido. Verifique a internet.");
+            } finally {
+              setIsUploading(false);
+              e.target.value = null; 
+            }
+          };
+
+          const handleToggleWorker = (name) => {
+            setSelectedWorkers(prev => prev.includes(name) ? prev.filter(w => w !== name) : [...prev, name]);
+          };
+
+          const handleAddCrew = (e) => {
+            e.preventDefault();
+            if (!tempService || !tempCrewLocation || selectedWorkers.length === 0) {
+              setAlertMsg("Selecione o Serviço, Local e pelo menos 1 funcionário.");
+              return;
+            }
+
+            const newCrew = { 
+              service: tempService, 
+              location: tempCrewLocation, 
+              workers: selectedWorkers
+            };
+            
+            setFormData({ ...formData, crews: [...formData.crews, newCrew] });
+            setTempService(""); setTempCrewLocation(""); setSelectedWorkers([]);
+          };
+
+          const handleAddEntry = (e) => {
+            e.preventDefault();
+            if (!tempLocation || !tempItem || !tempQty) {
+              setAlertMsg("Selecione o Local, Item e Quantidade.");
+              return;
+            }
+            if (!tempEntryCoords) {
+              setAlertMsg("Por favor, marque no MAPA onde ocorreu essa produção clicando no botão 'Apontar no Mapa'.");
+              return;
+            }
+
+            const newEntry = { 
+              location: tempLocation, 
+              item: tempItem, 
+              qty: tempQty,
+              mapCoords: tempEntryCoords 
+            };
+            
+            setFormData({ ...formData, entries: [...formData.entries, newEntry] });
+            setTempLocation(""); setTempItem(""); setTempQty(""); setTempEntryCoords(null);
+          };
+
+          const showSuccess = () => {
+            setSuccessMsg(editingId ? "DIÁRIO ATUALIZADO COM SUCESSO! ✅" : "DIÁRIO SALVO COM SUCESSO! ✅");
+            setTimeout(() => setSuccessMsg(""), 5000);
+          };
+
+          const handleSaveLog = async () => {
+            if (formData.entries.length === 0 && formData.crews.length === 0 && !formData.notes && (!formData.photos || formData.photos.length === 0)) {
+              setAlertMsg("Preencha pelo menos uma informação.");
+              return;
+            }
+
+            setLoading(true);
+            try {
+              const allWorkers = new Set();
+              formData.crews.forEach((crew) => crew.workers.forEach((w) => allWorkers.add(w)));
+              
+              const saveTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+              
+              const dataToSave = {
+                ...formData,
+                workersCount: allWorkers.size,
+                timestampLabel: formatDateDisplay(formData.date),
+                savedAtTime: saveTime,
+                authorId: user ? user.uid : "anonimo",
+              };
+
+              if (editingId) {
+                await updateDoc(doc(db, DB_COLLECTION, editingId), dataToSave);
+              } else {
+                dataToSave.createdAt = serverTimestamp(); 
+                await addDoc(collection(db, DB_COLLECTION), dataToSave);
+              }
+
+              localStorage.removeItem("diario_draft_v3");
+              setRestored(false);
+              setView("history");
+              showSuccess();
+            } catch (error) {
+              setAlertMsg("Erro ao salvar: " + error.message);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          const translateWeather = (w) => ({ sun: "ENSOLARADO", cloud: "NUBLADO", rain: "CHUVA" }[w] || w);
+          
+          const confirmDeleteLog = (id) => {
+            setConfirmDialog({
+              message: "Tem certeza que deseja apagar este diário?",
+              onConfirm: async () => {
+                await deleteDoc(doc(db, DB_COLLECTION, id));
+                setConfirmDialog(null);
+              }
+            });
+          };
+
+          const getMonthlyReport = () => {
+            const reportData = {};
+            logs.filter((log) => log.date.startsWith(reportMonth)).forEach((log) => {
+              if (log.entries) {
+                log.entries.forEach((entry) => {
+                  if (!reportData[entry.location]) reportData[entry.location] = {};
+                  reportData[entry.location][entry.item] = (reportData[entry.location][entry.item] || 0) + parseFloat(entry.qty);
+                });
+              }
+            });
+            return reportData;
+          };
+
+          const exportToExcel = () => {
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
+            csvContent += "Data;Responsável;Clima;Início;Fim;Tipo;Local;Item/Serviço;Quantidade/Equipe;Observações\n";
+
+            filteredLogs.forEach(log => {
+              const date = formatDateDisplay(log.date);
+              const resp = log.responsible;
+              const weather = translateWeather(log.weather);
+              const start = log.startTime;
+              const end = log.endTime;
+              const notes = (log.notes || "").replace(/[\n\r]+/g, " ").replace(/;/g, ","); 
+
+              if (log.entries && log.entries.length > 0) {
+                log.entries.forEach(entry => {
+                  csvContent += `${date};${resp};${weather};${start};${end};PRODUÇÃO;${entry.location};${entry.item};${entry.qty};${notes}\n`;
+                });
+              }
+
+              if (log.crews && log.crews.length > 0) {
+                log.crews.forEach(crew => {
+                  const workerList = crew.workers.join(", ");
+                  csvContent += `${date};${resp};${weather};${start};${end};EQUIPE;${crew.location};${crew.service};${workerList};${notes}\n`;
+                });
+              }
+
+              if ((!log.entries || log.entries.length === 0) && (!log.crews || log.crews.length === 0)) {
+                csvContent += `${date};${resp};${weather};${start};${end};OBSERVAÇÃO;-;-;-;${notes}\n`;
+              }
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `diario_obra_export_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
+
+          const filteredLogs = logs.filter((log) => {
+            if (filterStartDate && log.date < filterStartDate) return false;
+            if (filterEndDate && log.date > filterEndDate) return false;
+            return true;
+          });
+
+          const LogoComponent = () => {
+            if (LOGO_URL) return <img src={LOGO_URL} alt="Logo" className="h-16 w-auto mx-auto mb-4 object-contain" />;
+            return <div className="bg-orange-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200"><ClipboardList size={32} color="white" /></div>;
+          };
+
+          return (
+            <div className="relative">
+              {/* --- SISTEMA DE ALERTAS GLOBAIS --- */}
+              {alertMsg && (
+                <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/60 p-4">
+                  <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+                    <p className="text-gray-800 font-medium mb-6">{alertMsg}</p>
+                    <button onClick={() => setAlertMsg("")} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800">Entendido</button>
+                  </div>
+                </div>
+              )}
+
+              {confirmDialog && (
+                <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/60 p-4">
+                  <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+                    <p className="text-gray-800 font-medium mb-6">{confirmDialog.message}</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => setConfirmDialog(null)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 rounded-xl font-bold">Cancelar</button>
+                      <button onClick={confirmDialog.onConfirm} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold shadow-md">Sim, Apagar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Lógica das Telas */}
+              {!user ? (
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+                  <div className="bg-white w-full max-w-sm p-8 rounded-2xl shadow-lg border border-gray-100 text-center">
+                    <LogoComponent />
+                    <h1 className="text-2xl font-bold text-gray-900">Diário de Obra</h1>
+                    <form onSubmit={handleLogin} className="space-y-4 text-left mt-8">
+                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Usuário</label><div className="relative"><input type="text" required className="w-full bg-gray-50 border p-3 pl-10 outline-none rounded-xl" placeholder="ex: joao" value={username} onChange={(e) => setUsername(e.target.value)} /><User size={18} className="absolute left-3 top-3.5 text-gray-400" /></div></div>
+                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Senha</label><div className="relative"><input type="password" required className="w-full bg-gray-50 border p-3 pl-10 outline-none rounded-xl" placeholder="••••••" value={password} onChange={(e) => setPassword(e.target.value)} /><Lock size={18} className="absolute left-3 top-3.5 text-gray-400" /></div></div>
+                      {loginError && <div className="text-red-500 text-sm bg-red-50 p-3 rounded-lg flex items-center gap-2"><Lock size={16} /> {loginError}</div>}
+                      <button type="submit" className="w-full bg-gray-900 text-white py-3 font-bold rounded-xl shadow-lg hover:bg-gray-800">Entrar</button>
+                    </form>
+                  </div>
+                </div>
+              ) : view === "home" ? (
+                <div className="min-h-screen bg-gray-50 p-6 flex flex-col items-center justify-center font-sans text-gray-800 relative text-center">
+                  <div className="absolute top-4 right-4 flex items-center gap-3">
+                    <div className="flex items-center gap-1 bg-white px-3 py-2 rounded-full shadow-sm border border-gray-100 text-green-600 text-xs font-bold">
+                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Online
+                    </div>
+                    <button onClick={handleLogout} className="flex items-center gap-2 text-xs font-bold px-3 py-2 bg-white rounded-full shadow-sm border text-red-500"><LogOut size={14} /> Sair</button>
+                  </div>
+                  <LogoComponent />
+                  <h1 className="text-3xl font-bold text-gray-900">Diário de Obra</h1>
+                  <p className="text-gray-500 mt-2 mb-10">Olá, {formData.responsible || "Colaborador"}</p>
+                  
+                  <div className="grid gap-4 w-full max-w-sm">
+                    <button onClick={startNewLog} className="flex items-center p-6 bg-white rounded-2xl shadow-sm border hover:shadow-md group"><div className="bg-orange-100 p-3 rounded-full mr-4 group-hover:bg-orange-200"><Plus className="text-orange-600" size={24} /></div><div className="text-left"><h3 className="font-bold text-lg text-gray-800">Novo Registro</h3><p className="text-sm text-gray-500">Lançar diário completo</p></div></button>
+                    <button onClick={() => setView("history")} className="flex items-center p-6 bg-white rounded-2xl shadow-sm border hover:shadow-md group"><div className="bg-blue-100 p-3 rounded-full mr-4 group-hover:bg-blue-200"><ClipboardList className="text-blue-600" size={24} /></div><div className="text-left"><h3 className="font-bold text-lg text-gray-800">Ver Histórico</h3><p className="text-sm text-gray-500">{logs.length} diários salvos</p></div></button>
+                    <button onClick={() => setView("report")} className="flex items-center p-6 bg-white rounded-2xl shadow-sm border hover:shadow-md group"><div className="bg-green-100 p-3 rounded-full mr-4 group-hover:bg-green-200"><BarChart3 className="text-green-600" size={24} /></div><div className="text-left"><h3 className="font-bold text-lg text-gray-800">Relatório Mensal</h3><p className="text-sm text-gray-500">Soma de produção</p></div></button>
+                    <button onClick={() => setView("map")} className="flex items-center p-6 bg-white rounded-2xl shadow-sm border hover:shadow-md group"><div className="bg-red-100 p-3 rounded-full mr-4 group-hover:bg-red-200"><MapIcon className="text-red-600" size={24} /></div><div className="text-left"><h3 className="font-bold text-lg text-gray-800">Mapa da Obra</h3><p className="text-sm text-gray-500">Visualizar frentes via GPS</p></div></button>
+                  </div>
+                </div>
+              ) : view === "map" ? (
+                <div className="h-[100dvh] w-full overflow-hidden bg-gray-900 font-sans flex flex-col">
+                  <div className="bg-white px-6 py-4 shadow-sm flex items-center justify-between z-10 shrink-0">
+                    <div className="flex items-center">
+                      <button onClick={() => setView("home")} className="p-2 -ml-2 text-gray-600"><ChevronLeft size={24} /></button>
+                      <h2 className="ml-2 text-lg font-bold text-gray-800">Mapa de Produção</h2>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <input type="month" value={mapMonth} onChange={(e) => setMapMonth(e.target.value)} className="text-sm p-2 bg-gray-100 rounded-lg outline-none border font-bold text-gray-700" />
+                      {mapMonth && <button onClick={() => setMapMonth("")} className="text-gray-400 hover:text-red-500"><X size={20}/></button>}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-800 text-gray-300 text-xs p-3 text-center border-b border-gray-700 shrink-0">
+                     Use o <strong>Scroll do Mouse ou Pinça</strong> para Zoom. Segure e arraste o fundo para mover o mapa.
+                  </div>
+
+                  <div 
+                    className={`flex-1 min-h-0 overflow-auto bg-gray-900 hide-scroll p-4 sm:p-8 touch-none flex items-start justify-start ${isPanningMap ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    ref={setMapNode}
+                    onContextMenu={(e) => e.preventDefault()}
+                    onPointerDown={handleMapPointerDown}
+                    onPointerMove={handleMapPointerMove}
+                    onPointerUp={handleMapPointerUp}
+                    onPointerCancel={handleMapPointerCancel}
+                  >
+                    <div 
+                      ref={mapContainerRef}
+                      className="relative bg-white shadow-2xl overflow-hidden border-4 border-white/10 shrink-0"
+                      style={{ width: `${mapZoom}%`, minWidth: '600px' }}
+                    >
+                      <img src={MAPA_PLANTA_URL} alt="Planta da Obra" className="w-full h-auto block select-none pointer-events-none" draggable="false" />
+                      
+                      {localClusters.map((cluster) => {
+                        return (
+                          <div 
+                            key={cluster.id}
+                            className={`absolute touch-none ${!draggingState || draggingState.id !== cluster.id ? 'cursor-pointer transition-transform hover:scale-110' : 'scale-110 cursor-grabbing'}`}
+                            style={{ 
+                              top: `${cluster.top}%`, 
+                              left: `${cluster.left}%`, 
+                              transform: 'translate(-50%, -100%)',
+                              zIndex: draggingState?.id === cluster.id ? 100 : 10
+                            }}
+                            onPointerDown={(e) => {
+                               e.stopPropagation();
+                               e.target.setPointerCapture(e.pointerId);
+                               setDraggingState({ id: cluster.id, startX: e.clientX, startY: e.clientY });
+                               setInitialPinPos({ top: cluster.top, left: cluster.left });
+                               pinDragState.current.moved = false;
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if(!pinDragState.current.moved) {
+                                  setMapPinInfo(cluster);
+                              }
+                            }}
+                          >
+                            <div className="relative pointer-events-none">
+                               <MapPin 
+                                  className="text-orange-500 drop-shadow-md" 
+                                  size={36} 
+                                  fill="white" 
+                                  strokeWidth={2} 
+                               />
+                               <div className="absolute -bottom-1 left-1/2 w-1.5 h-1.5 bg-black/30 rounded-full blur-[2px] -translate-x-1/2"></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {mapPinInfo && (() => {
+                    let totaisPopup = {};
+                    mapPinInfo.items.forEach(item => {
+                      if (!totaisPopup[item.title]) totaisPopup[item.title] = 0;
+                      totaisPopup[item.title] += item.qty;
+                    });
+                    
+                    return (
+                    <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center bg-black/50 p-4 sm:p-0 animate-in fade-in" onClick={() => setMapPinInfo(null)}>
+                      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden transform transition-all flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-white px-5 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
+                          <div className="flex items-center text-gray-800">
+                            <MapPin size={20} className="text-orange-500 mr-2" />
+                            <h3 className="font-bold uppercase tracking-tight text-lg">
+                              {mapPinInfo.items[0].location}
+                            </h3>
+                          </div>
+                          <button onClick={() => setMapPinInfo(null)} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400"><X size={20} /></button>
+                        </div>
+                        <div className="p-0 overflow-y-auto">
+                           <table className="w-full text-sm text-left">
+                              <thead className="bg-gray-50 border-b border-gray-100">
+                                 <tr>
+                                    <th className="px-5 py-3 text-gray-900 font-bold">Item</th>
+                                    <th className="px-5 py-3 text-right text-gray-900 font-bold">Total</th>
+                                 </tr>
+                              </thead>
+                              <tbody>
+                                 {Object.keys(totaisPopup).sort().map((item) => (
+                                    <tr key={item} className="border-b border-gray-100 last:border-0">
+                                       <td className="px-5 py-3 font-medium text-gray-700">{item}</td>
+                                       <td className="px-5 py-3 text-right font-bold text-green-700 text-base">
+                                         {totaisPopup[item].toLocaleString("pt-BR")}
+                                       </td>
+                                    </tr>
+                                 ))}
+                              </tbody>
+                           </table>
+                        </div>
+                      </div>
+                    </div>
+                  )})()}
+
+                  {pendingPinMove && (
+                    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 p-4 animate-in fade-in">
+                       <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center transform transition-all scale-100">
+                          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-orange-100 mb-4">
+                             <MapPin className="h-6 w-6 text-orange-600" />
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Mover Ponto?</h3>
+                          <p className="text-sm text-gray-500 mb-6">
+                             Você arrastou as produções de <strong>{pendingPinMove.items[0]?.location}</strong> para um novo local. Deseja confirmar e salvar esta alteração?
+                          </p>
+                          <div className="flex gap-3">
+                             <button onClick={cancelPinMove} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 rounded-xl transition-colors">
+                                Cancelar
+                             </button>
+                             <button onClick={confirmPinMove} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-colors shadow-md">
+                                Sim, Salvar
+                             </button>
+                          </div>
+                       </div>
+                    </div>
+                  )}
+
+                </div>
+              ) : view === "report" ? (() => {
+                  const reportData = getMonthlyReport();
+                  return (
+                    <div className="min-h-screen bg-gray-50 font-sans">
+                      <div className="bg-white px-6 py-4 shadow-sm flex items-center justify-between sticky top-0 z-10"><div className="flex items-center"><button onClick={() => setView("home")} className="p-2 -ml-2 text-gray-600"><ChevronLeft size={24} /></button><h2 className="ml-2 text-lg font-bold text-gray-800">Relatório</h2></div><button onClick={() => window.print()} className="text-orange-500 p-2"><Printer size={20} /></button></div>
+                      <div className="max-w-2xl mx-auto p-6 text-left">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border mb-6"><label className="block text-sm font-bold text-gray-500 mb-2 uppercase">Selecione o Mês</label><input type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} className="w-full bg-gray-50 border p-3 rounded-lg text-lg font-bold outline-none" /></div>
+                        {Object.keys(reportData).length === 0 ? <div className="text-center py-20 text-gray-400">Sem dados.</div> : Object.keys(reportData).sort().map((local) => (
+                          <div key={local} className="bg-white rounded-xl border mb-6 shadow-sm overflow-hidden"><div className="bg-gray-50 px-4 py-3 border-b font-bold flex items-center"><MapPin size={16} className="mr-2 text-orange-500" />{local}</div><table className="w-full text-sm text-left"><thead className="bg-gray-50/50"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-right">Total</th></tr></thead><tbody>{Object.keys(reportData[local]).map((item) => (<tr key={item} className="border-b"><td className="px-4 py-3 font-medium">{item}</td><td className="px-4 py-3 text-right font-bold text-green-700">{reportData[local][item].toLocaleString("pt-BR")}</td></tr>))}</tbody></table></div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })() : view === "form" ? (
+                <div className="min-h-screen bg-gray-50 font-sans pb-20 text-left">
+                  <div className="bg-white px-6 py-4 shadow-sm flex items-center sticky top-0 z-10">
+                    <button onClick={() => setView("home")} className="p-2 -ml-2 text-gray-600"><ChevronLeft size={24} /></button>
+                    <h2 className="ml-2 text-lg font-bold text-gray-800">{editingId ? 'Editando Diário' : 'Novo Registro'}</h2>
+                  </div>
+                  
+                  {restored && !editingId && (<div className="bg-orange-100 text-orange-800 p-3 text-xs text-center font-bold">⚠️ Dados recuperados após reinício.</div>)}
+
+                  <div className="max-w-md mx-auto p-4 space-y-6">
+                    <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                      <div><label className="flex items-center text-sm font-bold text-gray-700 mb-2"><Calendar size={18} className="mr-2 text-orange-500" /> DATA</label><input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full bg-gray-50 border border-gray-200 p-3 outline-none rounded-lg" /></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><label className="text-xs font-bold text-gray-500 mb-1 block">INÍCIO</label><input type="time" value={formData.startTime} onChange={(e) => setFormData({ ...formData, startTime: e.target.value })} className="w-full bg-gray-50 border border-gray-200 p-3 outline-none rounded-lg" /></div>
+                        <div><label className="text-xs font-bold text-gray-500 mb-1 block">FIM</label><input type="time" value={formData.endTime} onChange={(e) => setFormData({ ...formData, endTime: e.target.value })} className="w-full bg-gray-50 border border-gray-200 p-3 outline-none rounded-lg" /></div>
+                      </div>
+                      <div><label className="flex items-center text-sm font-bold text-gray-700 mb-2"><User size={18} className="mr-2 text-orange-500" /> RESPONSÁVEL</label><div className="relative"><input type="text" value={formData.responsible} readOnly className="w-full bg-gray-200 text-gray-600 border border-gray-200 rounded-lg p-3 outline-none cursor-not-allowed font-bold" /><Lock size={16} className="absolute right-3 top-3.5 text-gray-400" /></div></div>
+                    </section>
+                    
+                    <section>
+                      <h3 className="text-sm font-bold text-gray-700 mb-3 px-1 uppercase">Condições do Tempo</h3>
+                      <div className="flex gap-4 justify-center mb-6">
+                        <button onClick={() => setFormData({ ...formData, weather: "sun" })} className={`p-4 rounded-xl flex flex-col items-center justify-center transition-all border ${formData.weather === "sun" ? "bg-orange-50 border-orange-500 text-orange-600" : "bg-white border-gray-200 text-gray-400"}`}><Sun size={28} className="mb-1" /><span className="text-xs font-medium">Sol</span></button>
+                        <button onClick={() => setFormData({ ...formData, weather: "cloud" })} className={`p-4 rounded-xl flex flex-col items-center justify-center transition-all border ${formData.weather === "cloud" ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-white border-gray-200 text-gray-400"}`}><Cloud size={28} className="mb-1" /><span className="text-xs font-medium">Nublado</span></button>
+                        <button onClick={() => setFormData({ ...formData, weather: "rain" })} className={`p-4 rounded-xl flex flex-col items-center justify-center transition-all border ${formData.weather === "rain" ? "bg-slate-200 border-slate-600 text-slate-800" : "bg-white border-gray-200 text-gray-400"}`}><CloudRain size={28} className="mb-1" /><span className="text-xs font-medium">Chuva</span></button>
+                      </div>
+                    </section>
+                    
+                    <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                      <label className="flex items-center text-sm font-bold text-gray-700 mb-3"><Camera size={18} className="mr-2 text-orange-500" /> FOTOS DA OBRA</label>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                         {formData.photos?.map((url, idx) => (
+                           <div key={idx} className="relative h-32 rounded-lg overflow-hidden border border-gray-200">
+                              <img src={url} className="w-full h-full object-cover" alt={`Foto`} />
+                              <button onClick={() => setFormData(prev => ({...prev, photos: prev.photos.filter((_, i) => i !== idx)}))} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 shadow-md"><X size={14} /></button>
+                           </div>
+                         ))}
+                         <label className={`flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 ${isUploading ? 'opacity-50' : ''}`}>
+                            <input type="file" accept="image/*" multiple onChange={handlePhotoSelect} className="hidden" disabled={isUploading} />
+                            {isUploading ? <Loader2 className="animate-spin text-orange-500" /> : <Upload className="text-gray-400 mb-1" />}
+                            <span className="text-xs text-gray-400 font-medium text-center px-2">{isUploading ? 'Enviando...' : 'Selecionar'}</span>
+                         </label>
+                      </div>
+                    </section>
+
+                    <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                      <div className="flex items-center mb-3">
+                         <Briefcase size={18} className="mr-2 text-blue-500" />
+                         <h3 className="text-sm font-bold text-gray-700 uppercase">Mão de Obra</h3>
+                      </div>
+                      <div className="space-y-3 mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                        <select value={tempService} onChange={(e) => setTempService(e.target.value)} className="w-full bg-white border border-gray-200 p-3 text-sm appearance-none rounded-lg">
+                           <option value="">Serviço...</option>
+                           {SERVICOS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <select value={tempCrewLocation} onChange={(e) => setTempCrewLocation(e.target.value)} className="w-full bg-white border border-gray-200 p-3 text-sm appearance-none rounded-lg">
+                           <option value="">Local...</option>
+                           {LOCAIS_SETOR.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                        <div className="max-h-40 overflow-y-auto bg-white border border-gray-200 rounded-lg p-2">
+                           {FUNCIONARIOS.map(f => (
+                             <button key={f} onClick={() => handleToggleWorker(f)} className={`block w-full text-left p-2 text-xs rounded mb-1 ${selectedWorkers.includes(f) ? "bg-blue-500 text-white" : "hover:bg-gray-50 text-gray-600"}`}>{f}</button>
+                           ))}
+                        </div>
+                        
+                        <button onClick={handleAddCrew} className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold rounded-lg transition-colors shadow-md mt-2">
+                           + Add Equipe
+                        </button>
+                      </div>
+                      
+                      {formData.crews.map((c, i) => (
+                        <div key={i} className="bg-white border border-blue-100 rounded-lg p-3 shadow-sm flex justify-between mb-2">
+                           <div>
+                              <div className="font-bold text-sm text-blue-700 uppercase">{c.service}</div>
+                              <div className="text-xs text-gray-500 flex items-center mt-1">
+                                 <MapPin size={12} className="mr-1 text-green-500"/>
+                                 {c.location}
+                              </div>
+                              <div className="text-xs mt-1 text-gray-600">{c.workers.join(", ")}</div>
+                           </div>
+                           <button onClick={() => setFormData({...formData, crews: formData.crews.filter((_, idx) => idx !== i)})}><X size={16} className="text-gray-400 hover:text-red-500" /></button>
+                        </div>
+                      ))}
+                    </section>
+
+                    <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                      <div className="flex items-center mb-3">
+                         <Hammer size={18} className="mr-2 text-orange-500" /> 
+                         <h3 className="text-sm font-bold text-gray-700 uppercase">Produção</h3>
+                      </div>
+                      <div className="space-y-3 mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                         <select value={tempLocation} onChange={(e) => setTempLocation(e.target.value)} className="w-full bg-white border border-gray-200 p-3 text-sm appearance-none rounded-lg">
+                            <option value="">Local...</option>
+                            {LOCAIS_PRODUCAO.map(l => <option key={l} value={l}>{l}</option>)}
+                         </select>
+                         <select value={tempItem} onChange={(e) => setTempItem(e.target.value)} className="w-full bg-white border border-gray-200 p-3 text-sm appearance-none rounded-lg">
+                            <option value="">Item...</option>
+                            {ITENS.map(i => <option key={i} value={i}>{i}</option>)}
+                         </select>
+                         <input type="number" placeholder="Qtd" value={tempQty} onChange={(e) => setTempQty(e.target.value)} className="w-full bg-white border border-gray-200 p-3 text-sm rounded-lg" />
+                         
+                         <div className="flex gap-2 pt-2 border-t border-gray-200 mt-2">
+                           <button type="button" onClick={() => openMapModal('entry')} className={`flex-1 py-3 text-xs font-bold rounded-lg border flex flex-col items-center justify-center transition-colors ${tempEntryCoords ? 'bg-green-50 border-green-500 text-green-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
+                              {tempEntryCoords ? <CheckCircle2 size={18} className="mb-1" /> : <MapPin size={18} className="mb-1" />}
+                              {tempEntryCoords ? "Local Marcado!" : "Apontar no Mapa"}
+                           </button>
+                           <button onClick={handleAddEntry} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 font-bold rounded-lg transition-colors shadow-md">
+                              + Add Produção
+                           </button>
+                        </div>
+                      </div>
+                      
+                      {formData.entries.map((e, i) => (
+                        <div key={i} className="bg-white border border-orange-100 rounded-lg p-3 shadow-sm flex justify-between mb-2">
+                           <div>
+                              <div className="font-bold text-gray-800">{e.item}</div>
+                              <div className="text-xs text-gray-500 flex items-center mt-1">
+                                 <MapPin size={12} className="mr-1 text-green-500"/>
+                                 {e.location} {e.mapCoords ? '(Com Mapa)' : ''} • <span className="font-bold text-orange-600 ml-1">Qtd: {e.qty}</span>
+                              </div>
+                           </div>
+                           <button onClick={() => setFormData({...formData, entries: formData.entries.filter((_, idx) => idx !== i)})}><X size={16} className="text-gray-400 hover:text-red-500" /></button>
+                        </div>
+                      ))}
+                    </section>
+
+                    <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><textarea rows="3" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder="Observações..." className="w-full bg-gray-50 border border-gray-200 p-3 text-sm outline-none rounded-lg"></textarea></section>
+                    
+                    <button onClick={handleSaveLog} disabled={loading} className="w-full bg-gray-900 text-white py-4 font-bold rounded-xl shadow-lg active:scale-95">{loading ? "Salvando..." : (editingId ? "Atualizar Diário" : "Finalizar Diário")}</button>
+                  </div>
+
+                  {isMapModalOpen && (
+                    <div className="fixed inset-0 z-[200] bg-gray-900 flex flex-col overflow-hidden animate-in fade-in duration-200">
+                      <div className="bg-white p-4 shadow-md flex justify-between items-center z-10 shrink-0">
+                        <button onClick={() => setIsMapModalOpen(false)} className="text-gray-500 p-2 hover:bg-gray-100 rounded-full"><X size={24}/></button>
+                        <div className="text-center">
+                          <h3 className="font-bold text-gray-800">Toque na Planta</h3>
+                          <p className="text-[10px] text-gray-500 font-medium">Dê um clique ou segure o dedo para marcar</p>
+                        </div>
+                        <button 
+                          onClick={confirmMapSelection} 
+                          className={`flex items-center gap-1 px-4 py-2 rounded-lg font-bold transition-all ${modalTempCoords ? 'bg-green-500 text-white shadow-md' : 'bg-gray-200 text-gray-400'}`}
+                          disabled={!modalTempCoords}
+                        >
+                          <Check size={18} /> OK
+                        </button>
+                      </div>
+                      
+                      <div 
+                        className={`flex-1 min-h-0 overflow-auto bg-gray-900 hide-scroll p-4 sm:p-8 touch-none flex items-start justify-start ${isPanningMap ? 'cursor-grabbing' : 'cursor-grab'}`}
+                        ref={setModalMapNode}
+                        onContextMenu={(e) => e.preventDefault()} 
+                        onPointerDown={handleModalPointerDown}
+                        onPointerMove={handleModalPointerMove}
+                        onPointerUp={handleModalPointerUp}
+                        onPointerCancel={handleModalPointerCancel}
+                      >
+                        <div 
+                          className="relative bg-white shadow-2xl overflow-hidden border-4 border-white/10 shrink-0"
+                          ref={modalInnerMapRef}
+                          style={{ width: `${mapZoom}%`, minWidth: '600px' }} 
+                        >
+                          <img src={MAPA_PLANTA_URL} alt="Planta da Obra para Marcação" className="w-full h-auto block select-none pointer-events-none" draggable="false" />
+                          
+                          {modalTempCoords && (
+                            <div 
+                              className="absolute pin-drop" 
+                              style={{ top: `${modalTempCoords[0]}%`, left: `${modalTempCoords[1]}%`, transform: 'translate(-50%, -100%)' }}
+                            >
+                              <MapPin className="text-red-500 drop-shadow-md" size={40} fill="white" strokeWidth={2} />
+                              <div className="absolute -bottom-1 left-1/2 w-2 h-2 bg-black/40 rounded-full blur-[2px] -translate-x-1/2"></div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              ) : view === "history" ? (
+                <div className="min-h-screen bg-gray-50 font-sans text-left pb-10">
+                  <div className="bg-white px-6 py-4 shadow-sm flex items-center justify-between sticky top-0 z-10 print:hidden">
+                    <div className="flex items-center">
+                      <button onClick={() => setView("home")} className="p-2 -ml-2"><ChevronLeft size={24} /></button>
+                      <h2 className="ml-2 text-lg font-bold">Histórico</h2>
+                    </div>
+                    <div className="flex gap-1 sm:gap-2 items-center flex-wrap justify-end">
+                      <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+                         <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="text-xs sm:text-sm p-1 bg-transparent outline-none" title="Data Inicial" />
+                         <span className="text-[10px] sm:text-xs font-bold text-gray-400 mx-1">ATÉ</span>
+                         <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="text-xs sm:text-sm p-1 bg-transparent outline-none" title="Data Final" />
+                      </div>
+                      {(filterStartDate || filterEndDate) && <button onClick={() => {setFilterStartDate(""); setFilterEndDate("");}} className="text-gray-400 hover:text-red-500" title="Limpar Filtro"><X size={16}/></button>}
+                      <button onClick={exportToExcel} className="text-green-600 p-2 hover:bg-green-50 rounded-full" title="Exportar Excel"><Download size={20} /></button>
+                      <button onClick={() => window.print()} className="text-orange-500 p-2 hover:bg-orange-50 rounded-full" title="Imprimir"><Printer size={20} /></button>
+                    </div>
+                  </div>
+                  
+                  <div className="max-w-4xl mx-auto p-4 space-y-4 print:max-w-full print:w-full print:p-0">
+                    {successMsg && (<div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-xl mb-4 flex items-center gap-2 animate-bounce"><CheckCircle2 size={20} />{successMsg}</div>)}
+                    
+                    {filteredLogs.length === 0 ? <div className="text-center py-20 text-gray-400">Vazio.</div> : filteredLogs.map((log) => (
+                      <div key={log.id} className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 print:overflow-visible print:border-none print:shadow-none print:break-inside-avoid print:break-after-page print:mb-0 print:pt-2 print:flex print:flex-col print:min-h-[260mm]">
+                          
+                          <div className="print:flex-1">
+                            {/* --- CABEÇALHO DE IMPRESSÃO --- */}
+                            <div className="hidden print:flex flex-col items-center justify-center mb-8 print:mb-2">
+                              {LOGO_URL && <img src={LOGO_URL} alt="Logo" className="h-16 w-auto object-contain mb-2 print:mb-1 print:h-14" />}
+                              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest">Relatório Diário de Obra</h2>
+                            </div>
+
+                            <div className="bg-gray-50 px-4 py-3 border-b flex justify-between print:bg-transparent print:border-none print:px-0 print:py-0 print:mb-4">
+                              <div>
+                                <div className="font-bold text-lg print:text-2xl print:mb-1 text-gray-900">{formatDateDisplay(log.date)}</div>
+                                <div className="text-xs text-gray-500 print:text-sm print:text-gray-700">{log.startTime} as {log.endTime} • {translateWeather(log.weather)}</div>
+                              </div>
+                              <div className="flex items-center gap-2 print:hidden">
+                                <button onClick={() => handleEditLog(log)} className="text-blue-500 p-2 rounded-full hover:bg-blue-50" title="Editar"><Pencil size={18} /></button>
+                                {user?.email?.split('@')[0].toLowerCase() === 'fabricio' && (
+                                  <button onClick={() => confirmDeleteLog(log.id)} className="text-gray-300 hover:text-red-500 p-2 rounded-full"><Trash2 size={18} /></button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="p-4 space-y-4 print:px-0 print:py-0 print:space-y-3">
+                              {log.crews?.length > 0 && <div><h5 className="text-[10px] font-bold text-gray-400 print:text-xs print:text-gray-800 uppercase mb-2 print:mb-1">Equipes</h5>{log.crews.map((c, i) => (<div key={i} className="text-xs print:text-[11px] mb-1 print:text-gray-900"><strong>{c.service} ({c.location})</strong>: {c.workers.join(", ")}</div>))}</div>}
+                              {log.entries?.length > 0 && <div><h5 className="text-[10px] font-bold text-gray-400 print:text-xs print:text-gray-800 uppercase mb-2 print:mb-1">Produção</h5>{log.entries.map((e, i) => (<div key={i} className="text-xs print:text-[11px] mb-1 print:text-gray-900"><strong>{e.item}</strong>: {e.qty} ({e.location})</div>))}</div>}
+                              
+                              {/* === FOTOS RESTAURADAS === */}
+                              {(log.photos?.length > 0 || log.photoUrl) && (
+                                <div className="print:mt-1 print:break-inside-avoid">
+                                  <h5 className="text-[10px] font-bold text-gray-400 print:text-xs print:text-gray-800 uppercase mb-2 print:mb-1">Fotos</h5>
+                                  <div className="flex flex-wrap gap-2 pb-2">
+                                    {log.photos?.map((url, i) => (
+                                      <img key={i} src={url} className="h-20 w-20 sm:h-28 sm:w-28 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity print:h-16 print:w-16 print:rounded-md print:border-gray-300 print:shadow-sm" alt="Foto" onClick={() => setSelectedImage(url)} />
+                                    ))}
+                                    {!log.photos && log.photoUrl && (
+                                      <img src={log.photoUrl} className="h-20 w-20 sm:h-28 sm:w-28 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity print:h-16 print:w-16 print:rounded-md print:border-gray-300 print:shadow-sm" alt="Foto antiga" onClick={() => setSelectedImage(log.photoUrl)} />
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {log.notes && <div className="print:break-inside-avoid"><h5 className="text-[10px] font-bold text-gray-400 print:text-xs print:text-gray-800 uppercase mb-1">Observações</h5><div className="italic text-xs bg-gray-50 p-2 rounded print:border print:border-gray-300 print:bg-white print:text-gray-900 print:text-[11px]">{log.notes}</div></div>}
+                              <div className="pt-2 border-t text-[10px] text-gray-400 print:border-none print:pt-2">Resp: {log.responsible}</div>
+                            </div>
+                          </div>
+
+                          {/* --- ASSINATURAS DE IMPRESSÃO --- */}
+                          <div className="hidden print:flex justify-between items-end print:mt-auto pt-8 px-4 break-inside-avoid print:pb-2">
+                              <div className="w-[40%] text-center border-t border-black pt-2">
+                                <div className="text-xs font-bold uppercase text-gray-800 print:text-xs">Encarregado</div>
+                              </div>
+                              <div className="w-[40%] text-center border-t border-black pt-2">
+                                <div className="text-xs font-bold uppercase text-gray-800 print:text-xs">Responsável</div>
+                              </div>
+                          </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* === AMPLIADOR DE IMAGEM RESTAURADO === */}
+                  {selectedImage && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 print:hidden" onClick={() => setSelectedImage(null)}>
+                      <button className="absolute top-4 right-4 text-white p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+                        <X size={28} />
+                      </button>
+                      <img src={selectedImage} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" alt="Foto Ampliada" />
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          );
+        };
+
+        // Renderiza o App
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
