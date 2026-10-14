@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && request.auth.uid == 'U082BAyIb6Un3xEnGdYgg1GrTcs1'; }
+    function actor(value) {
+      return signedIn() && value is map
+        && value.keys().hasAll(['uid', 'email', 'name'])
+        && value.uid == request.auth.uid
+        && value.email == request.auth.token.email
+        && value.name is string && value.name.size() > 0 && value.name.size() <= 100;
+    }
+    match /diarios_final/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && actor(request.resource.data.createdBy)
+        && actor(request.resource.data.updatedBy)
+        && request.resource.data.responsible == request.resource.data.createdBy.name
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['authorId', 'createdBy', 'createdAt', 'responsible'])
+        && actor(request.resource.data.updatedBy)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if admin();
+    }
+    match /app_settings/map {
+      allow read: if signedIn();
+      allow create, update: if admin()
+        && request.resource.data.url is string
+        && request.resource.data.url.matches('https://firebasestorage[.]googleapis[.]com/v0/b/diarioobra-60aca[.]firebasestorage[.]app/o/mapas%2F.*')
+        && request.resource.data.path is string
+        && request.resource.data.path.matches('mapas/[A-Za-z0-9-]+[.](webp|png)')
+        && request.resource.data.version is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 300
+        && request.resource.data.width is int && request.resource.data.width > 0 && request.resource.data.width <= 4096
+        && request.resource.data.height is int && request.resource.data.height > 0 && request.resource.data.height <= 4096
+        && request.resource.data.bytes is int && request.resource.data.bytes > 0 && request.resource.data.bytes <= 10 * 1024 * 1024
+        && actor(request.resource.data.updatedBy)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    // Keep other existing collections available to authenticated clients.
+    // This fallback must exclude the protected paths above.
+    match /{collection}/{document=**} {
+      allow read, write: if signedIn() && collection != 'diarios_final' && collection != 'app_settings';
+    }
+  }
+}

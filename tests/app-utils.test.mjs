@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {actorFor, auditFields, draftKey, emptyForm, fitDimensions, logPayload} from '../app-utils.mjs';
+const fabricio={uid:'admin',email:'fabricio@obra.com'}, lucas={uid:'lucas-id',email:'lucas@obra.com'};
+const created = {...emptyForm(fabricio), ...auditFields(fabricio, 'first', false)};
+const edited = {...created, ...auditFields(lucas, 'second', true)};
+assert.equal(edited.createdBy.uid,'admin');
+assert.equal(edited.createdAt,'first');
+assert.equal(edited.authorId,'admin');
+assert.equal(edited.responsible,'Fabricio');
+assert.equal(edited.updatedBy.uid,'lucas-id');
+assert.equal(edited.updatedAt,'second');
+const legacy = {...{responsible:'Souza',authorId:'old'},...auditFields(lucas,'now',true)};
+assert.equal(legacy.createdBy,undefined);
+assert.equal(legacy.authorId,'old');
+assert.notEqual(draftKey('admin'), draftKey('lucas-id'));
+assert.equal(actorFor(lucas).name,'Lucas');
+assert.throws(()=>actorFor(null));
+assert.deepEqual(fitDimensions(9934,7017,4096),{width:4096,height:2893});
+assert.deepEqual(fitDimensions(1200,4800,1600),{width:400,height:1600});
+assert.deepEqual(fitDimensions(200,100,320),{width:200,height:100});
+const payload = logPayload({...emptyForm(lucas), authorId:'forged', createdBy:{uid:'forged'}, photos:['keep'],photoThumbnails:{keep:'thumb',removed:'unused'}});
+assert.equal(payload.authorId,undefined); assert.equal(payload.createdBy,undefined);
+assert.deepEqual(payload.photoThumbnails,{keep:'thumb'});
+console.log('PASS: creator preserved, editor tracked, legacy preserved, per-user drafts, dimensions, payload whitelist.');
+
