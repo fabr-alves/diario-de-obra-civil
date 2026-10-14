@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && request.auth.uid == 'U082BAyIb6Un3xEnGdYgg1GrTcs1'; }
+    function validImage() {
+      return request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+    match /mapas/{filename} {
+      allow read: if signedIn();
+      allow create: if admin() && validImage();
+      allow update, delete: if false;
+    }
+    match /diarios_fotos/{path=**} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validImage();
+      allow update, delete: if admin();
+    }
+    // Existing root images retain their download tokens. Only the admin can replace them.
+    match /{filename} {
+      allow read: if signedIn();
+      allow create, update: if admin() && validImage();
+      allow delete: if admin();
+    }
+  }
+}
